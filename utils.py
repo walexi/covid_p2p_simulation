@@ -52,6 +52,8 @@ def _get_random_sex(rng):
     else:
         return 'other'
 
+
+# &mask-wearing
 def _get_mask_wearing(carefullness, simulation_days, rng):
     return [rng.rand() < carefullness*BASELINE_P_MASK for day in range(simulation_days)]
 
@@ -166,8 +168,8 @@ def _get_covid_symptoms(viral_load_plateau_start, viral_load_plateau_end,
             symptoms2.append('light_trouble_breathing')
         if 'moderate'in symptoms2 and 'trouble_breathing' in symptoms2:
             symptoms2.append('moderate_trouble_breathing')
-        if ('severe' in symptoms2 or 'extremely-severe' in symptoms2) and 'trouble_breathing' in symptoms3:
-            symptoms3.append('heavy_trouble_breathing')
+        if ('severe' in symptoms2 or 'extremely-severe' in symptoms2) and 'trouble_breathing' in symptoms2:
+            symptoms2.append('heavy_trouble_breathing')
 
         for day in range(round(viral_load_plateau_end - viral_load_plateau_start)):
             progression.append(symptoms2)

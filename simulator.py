@@ -61,7 +61,13 @@ class Human(object):
         self.preexisting_conditions = _get_preexisting_conditions(self.age, self.sex, self.rng)
 
         self.household = household
-        self.workplace = workplace
+        if SOCIAL_DISTANCE or LOCKDOWN:
+            self.work_from_home = rng.rand() < WORK_FROM_HOME 
+            self.workplace = household
+        else: 
+            self.work_from_home = False 
+            self.workplace = workplace
+
         self.hospital = hospital
         self.location = household
         self.rho = rho
@@ -76,7 +82,10 @@ class Human(object):
         else:
             self.carefullness = (round(self.rng.normal(25, 10)) + self.age/2) / 100
 
-        self.mask_wearing = _get_mask_wearing(self.carefullness, self.simulation_days, self.rng)
+        if SOCIAL_DISTANCE or LOCKDOWN:
+            self.mask_wearing = _get_mask_wearing(self.carefullness, self.simulation_days, self.rng)
+        else:
+            self.mask_wearing = [False for day in range(simulation_days)]
 
         age_modifier = 1
         if self.age > 40 or self.age < 12:
@@ -127,7 +136,6 @@ class Human(object):
         self.obs_preexisting_conditions = self.preexisting_conditions if self.has_app and self.has_logged_info else None
 
 
-
         # habits
         self.avg_shopping_time = _draw_random_discreet_gaussian(AVG_SHOP_TIME_MINUTES, SCALE_SHOP_TIME_MINUTES, self.rng)
         self.scale_shopping_time = _draw_random_discreet_gaussian(AVG_SCALE_SHOP_TIME_MINUTES,
@@ -135,7 +143,7 @@ class Human(object):
 
         self.avg_exercise_time = _draw_random_discreet_gaussian(AVG_EXERCISE_MINUTES, SCALE_EXERCISE_MINUTES, self.rng)
         self.scale_exercise_time = _draw_random_discreet_gaussian(AVG_SCALE_EXERCISE_MINUTES,
-                                                                  SCALE_SCALE_EXERCISE_MINUTES, self.rng)
+                                                                      SCALE_SCALE_EXERCISE_MINUTES, self.rng)
 
         self.avg_working_hours = _draw_random_discreet_gaussian(AVG_WORKING_MINUTES, SCALE_WORKING_MINUTES, self.rng)
         self.scale_working_hours = _draw_random_discreet_gaussian(AVG_SCALE_WORKING_MINUTES, SCALE_SCALE_WORKING_MINUTES, self.rng)
@@ -169,6 +177,21 @@ class Human(object):
         #Limiting the number of hours spent exercising per week
         self.max_exercise_per_week = _draw_random_discreet_gaussian(AVG_MAX_NUM_EXERCISE_PER_WEEK, SCALE_MAX_NUM_EXERCISE_PER_WEEK, self.rng)
         self.count_exercise=0
+
+        if SOCIAL_DISTANCE:
+            if self.carefullness > (1-SOCIAL_DISTANCE_AMOUNT):
+                self.number_of_shopping_days = 0
+                self.avg_misc_time = 0
+            else:
+                self.number_of_shopping_days = 1
+        elif LOCKDOWN:  
+            self.max_exercise_per_week = 0
+            self.avg_misc_time = 0
+            self.scale_misc_time = 1
+            if self.carefullness > (1-LOCKDOWN_AMOUNT): 
+                self.number_of_shopping_days = 0
+            else:
+                self.number_of_shopping_days = 1
 
         self.work_start_hour = self.rng.choice(range(7, 12))
 
@@ -315,12 +338,12 @@ class Human(object):
         if self.location == self.household:
             mask = False
         if self.location.location_type == 'store': 
-            if self.carefullness > 60:
+            if self.carefullness > (1-SOCIAL_DISTANCE_AMOUNT):
                 mask = True
             else:
                 mask = self.mask_wearing[self.today]
         else:
-            mask = self.mask_wearing[self.today] #baseline p * carefullness
+            mask = self.mask_wearing[self.today] #baseline p * self.carefullness
         return mask
 
     @property
@@ -403,11 +426,12 @@ class Human(object):
                 self.count_exercise=0
                 self.count_shop=0
 
+            random_hospital_visit = self.rng.rand() < P_NORMAL_HOSPITALIZATION + (self.age - 50)/300
             if self.extremely_sick:
                 yield self.env.process(self.hospitalize(city, icu_required=True))
-            elif self.really_sick:
+            elif self.really_sick or random_hospital_visit:
                 yield self.env.process(self.hospitalize(city))
-            elif not WORK_FROM_HOME and not self.env.is_weekend() and hour == self.work_start_hour:
+            elif not self.work_from_home and not self.env.is_weekend() and hour == self.work_start_hour:
                 yield self.env.process(self.excursion(city, "work"))
 
             elif hour in self.shopping_hours and day in self.shopping_days and self.count_shop<=self.max_shop_per_week:
@@ -512,7 +536,19 @@ class Human(object):
                 continue
 
             # calculate the nature of the contact
-            distance = np.sqrt(int(area/len(self.location.humans))) + self.rng.randint(MIN_DIST_ENCOUNTER, MAX_DIST_ENCOUNTER)
+
+            if SOCIAL_DISTANCE:    
+                distance = ((1 + self.carefullness*SOCIAL_DISTANCE_AMOUNT) * \
+                           np.sqrt(int(area/len(self.location.humans)))) + \
+                           self.rng.randint(MIN_DIST_ENCOUNTER, MAX_DIST_ENCOUNTER)    
+
+            if LOCKDOWN:    
+                distance = ((1.5 + self.carefullness*LOCKDOWN_AMOUNT) * \
+                           np.sqrt(int(area/len(self.location.humans)))) + \
+                           self.rng.randint(MIN_DIST_ENCOUNTER, MAX_DIST_ENCOUNTER)
+            else: 
+                distance = np.sqrt(int(area/len(self.location.humans))) + \
+                           self.rng.randint(MIN_DIST_ENCOUNTER, MAX_DIST_ENCOUNTER)
             t_near = min(self.leaving_time, h.leaving_time) - max(self.start_time, h.start_time)
             is_exposed = False
 
